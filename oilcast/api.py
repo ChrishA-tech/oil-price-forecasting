@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 from typing import List
 from fastapi import FastAPI, HTTPException
@@ -35,6 +36,8 @@ def forecast_oil_endpoint(req: OilForecastRequest):
         results = forecaster.fit_and_forecast(df, horizon=req.horizon, test_size=6)
     except TimeSeriesValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (ValueError, np.linalg.LinAlgError) as exc:   # e.g. bad dates, singular fit
+        raise HTTPException(status_code=422, detail=f"Model could not be fitted: {exc}") from exc
 
     fcast_records = results["forecast_df"].assign(
         date=results["forecast_df"]["date"].dt.strftime("%Y-%m-%d")

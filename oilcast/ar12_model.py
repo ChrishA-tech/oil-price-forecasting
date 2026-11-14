@@ -47,8 +47,18 @@ class OilPriceAR12Forecaster:
             raise TimeSeriesValidationError(
                 f"Series length ({len(df)}) is shorter than minimum required ({min_required}) for AR({self.lags})."
             )
-        s = pd.Series(df["brent_usd"].values, index=pd.to_datetime(df["date"]), name="brent_usd")
-        return s.asfreq("MS")
+        try:
+            idx = pd.to_datetime(df["date"])
+        except (ValueError, TypeError) as exc:
+            raise TimeSeriesValidationError(f"Unparseable dates: {exc}") from exc
+        s = pd.Series(df["brent_usd"].values, index=idx, name="brent_usd").sort_index()
+        if s.index.duplicated().any():
+            raise TimeSeriesValidationError("Duplicate dates in series.")
+        s = s.asfreq("MS")
+        if s.isna().any():
+            raise TimeSeriesValidationError(
+                f"Series is not a gap-free monthly (month-start) series: {int(s.isna().sum())} missing month(s).")
+        return s
 
     def run_adf_test(self, series: pd.Series) -> Dict[str, Any]:
         adf_stat, p_val, used_lag, nobs, crit_vals, _ = adfuller(series.dropna(), autolag="AIC")

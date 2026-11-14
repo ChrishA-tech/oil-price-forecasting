@@ -2,10 +2,10 @@ import os
 import pytest
 import pandas as pd
 from fastapi.testclient import TestClient
-from src.ar12_model import generate_brent_oil_series, OilPriceAR12Forecaster
-from src.dashboard import export_interactive_plotly_dashboard
-from src.exceptions import TimeSeriesValidationError
-from src.api import app
+from oilcast.ar12_model import generate_brent_oil_series, OilPriceAR12Forecaster
+from oilcast.dashboard import export_interactive_plotly_dashboard
+from oilcast.exceptions import TimeSeriesValidationError
+from oilcast.api import app
 
 client = TestClient(app)
 

@@ -1,9 +1,9 @@
 import os
 import tempfile
 import unittest
-from src.ar12_model import generate_brent_oil_series, OilPriceAR12Forecaster
-from src.dashboard import export_interactive_plotly_dashboard
-from src.exceptions import TimeSeriesValidationError
+from oilcast.ar12_model import generate_brent_oil_series, OilPriceAR12Forecaster
+from oilcast.dashboard import export_interactive_plotly_dashboard
+from oilcast.exceptions import TimeSeriesValidationError
 
 
 class TestOilPriceAR12(unittest.TestCase):
