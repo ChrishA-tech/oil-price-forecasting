@@ -33,7 +33,7 @@ improvement is significant (✓).
 
 | Part | File | |
 |---|---|---|
-| Data | `oilcast/data.py` | Downloads the IMF Brent series (monthly average USD/bbl) from DBnomics, falling back to FRED `POILBREUSDM` (the same IMF series); records the source used in `data/brent_source.txt`; validates it (no duplicate or missing months, positive prices) and caches it to `data/` |
+| Data | `oilcast/data.py` | Downloads monthly Brent (USD/bbl) from the US EIA (`RBRTE`), falling back to FRED `POILBREUSDM` and then the same IMF series via DBnomics; skips any source more than 9 months out of date, refreshes a stale cache automatically and records the source used in `data/brent_source.txt`; validates it (no duplicate or missing months, positive prices) and caches it to `data/` |
 | Models | `oilcast/models.py` | Naive, drift, seasonal naive, **AR(12) on levels** (original), AR on log-returns with AIC lag selection, ARIMA(1,1,1), damped-trend ETS |
 | Backtest | `oilcast/backtest.py` | Expanding-window rolling origin (each model trained only on data before the origin), horizons 1/3/6/12 months, RMSE / MAE / MAPE, Diebold-Mariano vs naive with Harvey-Leybourne-Newbold correction |
 | Original AR(12) pipeline | `oilcast/ar12_model.py` | ADF stationarity test, AR(12) fit, 95% forecast intervals |
@@ -61,4 +61,4 @@ Changes made when this project was reviewed and upgraded:
 - **Single 12-month split replaced** by a 60-origin rolling backtest with baselines and significance tests.
 - **Input validation:** gaps and duplicate months are rejected instead of silently becoming NaN after `asfreq`.
 
-Data: IMF Primary Commodity Prices, Global price of Brent Crude (POILBRE), retrieved via DBnomics or from FRED [POILBREUSDM], Federal Reserve Bank of St. Louis.
+Data: U.S. Energy Information Administration, Europe Brent Spot Price FOB (RBRTE); fallbacks: IMF Primary Commodity Prices, Global price of Brent Crude, via FRED [POILBREUSDM] (Federal Reserve Bank of St. Louis) or DBnomics. The source used for the published results is named in the results section.

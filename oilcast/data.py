@@ -28,6 +28,9 @@ SOURCE_FILE = DATA_DIR / "brent_source.txt"
 # DBnomics mirrors the IMF Primary Commodity Prices dataset, the same series FRED republishes as POILBREUSDM.
 DBNOMICS_URL = ("https://api.db.nomics.world/v22/series/IMF/PCPS/M.W00.POILBRE.USD"
                 "?observations=1&format=json")
+EIA_URL = "https://www.eia.gov/dnav/pet/hist_xls/RBRTEm.xls"
+SOURCE_EIA = "US EIA Europe Brent Spot Price FOB (RBRTE), monthly average USD/bbl"
+MAX_STALE_DAYS = 270      # a source whose last month is older than this is skipped if a fresher one exists
 SOURCE_FRED = "FRED POILBREUSDM (IMF Brent crude, monthly average USD/bbl)"
 SOURCE_DBNOMICS = "IMF PCPS POILBRE via DBnomics (same IMF series as FRED POILBREUSDM; monthly average USD/bbl)"
 
@@ -54,6 +57,34 @@ def parse_dbnomics_json(text: str, value_col: str = "brent_usd") -> pd.DataFrame
     out = pd.DataFrame({"date": pd.to_datetime(pd.Series(periods).astype(str).str[:7], format="%Y-%m"),
                         value_col: pd.to_numeric(pd.Series(values).replace("NA", None), errors="coerce")})
     return clean_monthly(out, value_col)
+
+
+def parse_eia_xls(content: bytes, value_col: str = "brent_usd") -> pd.DataFrame:
+    """
+    Parse EIA's history workbook (e.g. RBRTEm.xls). Layout-tolerant: on every sheet, keep rows whose first
+    cell is a date and second cell a number, and use the sheet with the most such rows ('Data 1').
+    """
+    try:
+        sheets = pd.read_excel(io.BytesIO(content), sheet_name=None, header=None, engine="xlrd")
+    except Exception as e:
+        raise TimeSeriesValidationError(f"Could not read EIA workbook ({type(e).__name__}: {e})")
+    best = None
+    for sh in sheets.values():
+        if sh.shape[1] < 2:
+            continue
+        d = pd.to_datetime(sh.iloc[:, 0], errors="coerce")
+        v = pd.to_numeric(sh.iloc[:, 1], errors="coerce")
+        ok = d.notna() & v.notna()
+        if ok.sum() and (best is None or ok.sum() > len(best)):
+            best = pd.DataFrame({"date": d[ok].values, value_col: v[ok].values})
+    if best is None or len(best) < 24:
+        raise TimeSeriesValidationError("EIA workbook has no usable monthly series.")
+    return clean_monthly(best, value_col)
+
+
+def is_stale(df: pd.DataFrame, max_days: int = MAX_STALE_DAYS, today: Optional[pd.Timestamp] = None) -> bool:
+    today = today or pd.Timestamp.today().normalize()
+    return (today - pd.Timestamp(df["date"].iloc[-1])).days > max_days
 
 
 def clean_monthly(df: pd.DataFrame, value_col: str = "brent_usd") -> pd.DataFrame:
@@ -106,31 +137,52 @@ def download_fred(series: str = "POILBREUSDM", timeout: int = 90, attempts: int 
         f"Manual option: open {FRED_URL.format(series=series)} in a browser and save the file as {MANUAL}")
 
 
-def _http_get(url: str, timeout: int, attempts: int) -> str:
+def _http_get(url: str, timeout: int, attempts: int, binary: bool = False):
     last = None
     for i in range(attempts):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA})
             with urllib.request.urlopen(req, timeout=timeout) as r:
-                return r.read().decode("utf-8")
+                body = r.read()
+                return body if binary else body.decode("utf-8")
         except Exception as e:
             last = e
             time.sleep(3 * (i + 1))
     raise last
 
 
+def _sources(timeout: int, attempts: int):
+    return [
+        (SOURCE_EIA, lambda: parse_eia_xls(_http_get(EIA_URL, timeout, attempts, binary=True))),
+        (SOURCE_FRED, lambda: parse_fred_csv(download_fred(timeout=timeout, attempts=attempts))),
+        (SOURCE_DBNOMICS, lambda: parse_dbnomics_json(_http_get(DBNOMICS_URL, timeout, attempts))),
+    ]
+
+
 def download_brent(timeout: int = 60, attempts: int = 2):
-    """Try DBnomics (IMF) then FRED. Returns (DataFrame, source label)."""
-    errors = []
-    try:
-        return parse_dbnomics_json(_http_get(DBNOMICS_URL, timeout, attempts)), SOURCE_DBNOMICS
-    except Exception as e:
-        errors.append(f"DBnomics: {type(e).__name__}: {e}")
-    try:
-        return parse_fred_csv(download_fred(timeout=timeout, attempts=attempts)), SOURCE_FRED
-    except Exception as e:
-        errors.append(f"FRED: {e}")
-    raise TimeSeriesValidationError("Could not download Brent prices. " + " | ".join(errors))
+    """
+    Try EIA, then FRED, then DBnomics. A source whose data ends more than MAX_STALE_DAYS ago is only
+    used if nothing fresher can be downloaded. Returns (DataFrame, source label).
+    """
+    errors, stale = [], []
+    for label, fn in _sources(timeout, attempts):
+        try:
+            df = fn()
+        except Exception as e:
+            errors.append(f"{label.split(' (')[0]}: {type(e).__name__}: {e}")
+            continue
+        if not is_stale(df):
+            return df, label
+        stale.append((df, label))
+        errors.append(f"{label.split(' (')[0]}: stale, ends {df['date'].iloc[-1]:%Y-%m}")
+    if stale:
+        df, label = max(stale, key=lambda t: t[0]["date"].iloc[-1])
+        print(f"!! Using the freshest available Brent data ({label}, ends {df['date'].iloc[-1]:%Y-%m}). "
+              + " | ".join(errors))
+        return df, label
+    raise TimeSeriesValidationError("Could not download Brent prices. " + " | ".join(errors)
+                                    + f". Manual option: save {EIA_URL} or {FRED_URL.format(series='POILBREUSDM')} "
+                                      f"from a browser as {MANUAL}")
 
 
 def data_source() -> str:
@@ -139,6 +191,16 @@ def data_source() -> str:
 
 def load_brent(refresh: bool = False, start: Optional[str] = None, cache: Path = CACHE) -> pd.DataFrame:
     """Monthly Brent prices (date, brent_usd). Uses the cached CSV unless refresh=True or missing."""
+    if cache.exists() and not refresh:
+        cached = clean_monthly(pd.read_csv(cache, parse_dates=["date"]))
+        if is_stale(cached) and cache == CACHE and not MANUAL.exists():
+            try:                                    # cached data is old: try to update, keep the cache on failure
+                fresh, src = download_brent()
+                if fresh["date"].iloc[-1] > cached["date"].iloc[-1]:
+                    fresh.to_csv(cache, index=False, date_format="%Y-%m-%d")
+                    SOURCE_FILE.write_text(src + "\n")
+            except Exception as e:
+                print(f"!! Cached Brent data ends {cached['date'].iloc[-1]:%Y-%m}; update failed ({e}). Using cache.")
     if refresh or not cache.exists():
         if MANUAL.exists() and not refresh:
             df, src = parse_fred_csv(MANUAL.read_text(encoding="utf-8-sig")), SOURCE_FRED   # browser copy

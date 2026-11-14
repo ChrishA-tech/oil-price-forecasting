@@ -154,3 +154,41 @@ def test_download_brent_falls_back_to_fred(monkeypatch):
     monkeypatch.setattr(d, "download_fred", lambda **k: fred)
     df, src = d.download_brent()
     assert len(df) == 2 and src == d.SOURCE_FRED
+
+
+def test_parse_eia_xls_layout():
+    from oilcast.data import parse_eia_xls
+    df = parse_eia_xls((FX / "eia_rbrtem_sample.xls").read_bytes())
+    assert len(df) == 26 and df["brent_usd"].iloc[0] == 18.58
+    assert str(df["date"].iloc[0].date()) == "1987-05-01"          # mid-month dates normalised
+
+
+def test_download_brent_skips_stale_source(monkeypatch):
+    import pandas as pd
+    import oilcast.data as d
+    old = pd.DataFrame({"date": pd.date_range("2000-01-01", periods=30, freq="MS"), "brent_usd": 50.0})
+    new = pd.DataFrame({"date": pd.date_range(end=pd.Timestamp.today().normalize().replace(day=1),
+                                              periods=30, freq="MS"), "brent_usd": 70.0})
+    def boom():
+        raise OSError("timeout")
+    monkeypatch.setattr(d, "_sources", lambda t, a: [("A", lambda: old), ("B", boom), ("C", lambda: new)])
+    df, src = d.download_brent()
+    assert src == "C"
+    monkeypatch.setattr(d, "_sources", lambda t, a: [("A", lambda: old), ("B", boom)])
+    df, src = d.download_brent()                                   # nothing fresh: freshest stale is used
+    assert src == "A"
+
+
+def test_stale_cache_is_updated(monkeypatch, tmp_path):
+    import pandas as pd
+    import oilcast.data as d
+    cache = tmp_path / "brent_monthly.csv"
+    pd.DataFrame({"date": pd.date_range("2000-01-01", periods=30, freq="MS"), "brent_usd": 50.0}).to_csv(cache, index=False)
+    new = pd.DataFrame({"date": pd.date_range(end=pd.Timestamp.today().normalize().replace(day=1),
+                                              periods=40, freq="MS"), "brent_usd": 70.0})
+    monkeypatch.setattr(d, "CACHE", cache)
+    monkeypatch.setattr(d, "SOURCE_FILE", tmp_path / "src.txt")
+    monkeypatch.setattr(d, "MANUAL", tmp_path / "none.csv")
+    monkeypatch.setattr(d, "download_brent", lambda: (new, "fresh source"))
+    df = d.load_brent(cache=cache)
+    assert len(df) == 40 and (tmp_path / "src.txt").read_text().strip() == "fresh source"
