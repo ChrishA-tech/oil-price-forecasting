@@ -7,21 +7,21 @@ baselines and alternative time-series models on **real prices**, using a **rolli
 ## Results (real data)
 
 <!-- RESULTS:START -->
-**Data:** IMF PCPS POILBRE via DBnomics (same IMF series as FRED POILBREUSDM; monthly average USD/bbl), 2000-01 to 2025-06 (306 months). **Backtest:** 60 rolling origins, expanding window, run 2026-11-14.
+**Data:** US EIA Europe Brent Spot Price FOB (RBRTE), monthly average USD/bbl, 2000-01 to 2026-10 (322 months). **Backtest:** 60 rolling origins, expanding window, run 2026-11-14.
 
 Out-of-sample RMSE (USD/bbl) by horizon; in brackets: RMSE relative to the naive random walk (<1 = better). ✓ = significantly better than naive (Diebold-Mariano, p<0.05).
 
 | Model | h=1 | h=3 | h=6 | h=12 |
 |---|---|---|---|---|
-| Naive (random walk) | 5.62 | 10.69 | 16.14 | 23.58 |
-| Drift | 5.62 (1.00) | 10.72 (1.00) | 16.20 (1.00) | 23.82 (1.01) |
-| Seasonal naive (12m) | 23.50 (4.18) | 23.67 (2.21) | 23.89 (1.48) | 23.58 (1.00) |
-| AR(12) on levels (original) | 5.73 (1.02) | 10.89 (1.02) | 15.24 (0.94) | 19.93 (0.84) ✓ |
-| AR on log-returns (AIC) | 5.62 (1.00) | 10.79 (1.01) | 16.46 (1.02) | 24.45 (1.04) |
-| ARIMA(1,1,1) on log | 5.60 (1.00) | 10.66 (1.00) | 16.15 (1.00) | 23.53 (1.00) |
-| ETS damped trend on log | 5.63 (1.00) | 10.73 (1.00) | 16.26 (1.01) | 23.90 (1.01) |
+| Naive (random walk) | 8.92 | 16.76 | 18.09 | 21.25 |
+| Drift | 8.92 (1.00) | 16.80 (1.00) | 18.25 (1.01) | 22.11 (1.04) |
+| Seasonal naive (12m) | 25.04 (2.81) | 24.76 (1.48) | 23.61 (1.30) | 21.25 (1.00) |
+| AR(12) on levels (original) | 8.70 (0.97) | 17.20 (1.03) | 17.28 (0.95) | 18.48 (0.87) ✓ |
+| AR on log-returns (AIC) | 8.41 (0.94) | 16.67 (0.99) | 18.51 (1.02) | 23.14 (1.09) |
+| ARIMA(1,1,1) on log | 8.61 (0.96) | 16.93 (1.01) | 18.19 (1.00) | 21.57 (1.01) |
+| ETS damped trend on log | 8.93 (1.00) | 16.82 (1.00) | 18.29 (1.01) | 21.94 (1.03) |
 
-**Best 1-month model out of sample:** ARIMA(1,1,1) on log. Next-month forecast (2025-07): $71.85/bbl.
+**Best 1-month model out of sample:** AR on log-returns (AIC). Next-month forecast (2026-11): $122.83/bbl.
 
 <!-- RESULTS:END -->
 

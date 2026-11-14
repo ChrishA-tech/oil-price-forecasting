@@ -1,1 +1,1 @@
-IMF PCPS POILBRE via DBnomics (same IMF series as FRED POILBREUSDM; monthly average USD/bbl)
+US EIA Europe Brent Spot Price FOB (RBRTE), monthly average USD/bbl
