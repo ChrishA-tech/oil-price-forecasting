@@ -127,3 +127,30 @@ def test_download_failure_message_explains_manual_option(monkeypatch):
     monkeypatch.setattr(d.time, "sleep", lambda s: None)
     with pytest.raises(TimeSeriesValidationError, match="Manual option"):
         d.download_fred(attempts=2)
+
+
+def test_parse_dbnomics_json():
+    from pathlib import Path
+    from oilcast.data import parse_dbnomics_json
+    txt = (Path(__file__).parent / "fixtures" / "dbnomics_brent_sample.json").read_text()
+    df = parse_dbnomics_json(txt)
+    assert len(df) == 3 and df["brent_usd"].iloc[0] == 21.25          # trailing NA dropped
+    assert str(df["date"].iloc[-1].date()) == "1990-03-01"
+
+
+def test_parse_dbnomics_rejects_bad_payload():
+    from oilcast.data import parse_dbnomics_json
+    from oilcast.exceptions import TimeSeriesValidationError
+    with pytest.raises(TimeSeriesValidationError):
+        parse_dbnomics_json('{"series": {"docs": []}}')
+
+
+def test_download_brent_falls_back_to_fred(monkeypatch):
+    import oilcast.data as d
+    fred = "observation_date,POILBREUSDM\n1990-01-01,21.25\n1990-02-01,19.81\n"
+    def fake_get(url, timeout, attempts):
+        raise OSError("blocked")
+    monkeypatch.setattr(d, "_http_get", fake_get)
+    monkeypatch.setattr(d, "download_fred", lambda **k: fred)
+    df, src = d.download_brent()
+    assert len(df) == 2 and src == d.SOURCE_FRED
