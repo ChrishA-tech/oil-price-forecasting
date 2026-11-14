@@ -109,3 +109,21 @@ def test_api_rejects_gappy_series():
            for i, d in enumerate(pd.date_range("2018-01-01", periods=40, freq="MS")) if i != 20]
     r = TestClient(app).post("/api/v1/forecast-oil", json={"observations": obs, "horizon": 3})
     assert r.status_code == 400 and "missing month" in r.json()["detail"]
+
+
+def test_load_brent_uses_manual_file_when_no_cache(tmp_path, monkeypatch):
+    import oilcast.data as d
+    manual = tmp_path / "manual" / "POILBREUSDM.csv"
+    manual.parent.mkdir()
+    manual.write_text((FX / "fred_sample.csv").read_text())
+    monkeypatch.setattr(d, "MANUAL", manual)
+    monkeypatch.setattr(d, "download_fred", lambda: (_ for _ in ()).throw(AssertionError("should not download")))
+    assert len(d.load_brent(cache=tmp_path / "cache.csv")) == 6
+
+
+def test_download_failure_message_explains_manual_option(monkeypatch):
+    import oilcast.data as d
+    monkeypatch.setattr(d.urllib.request, "urlopen", lambda *a, **k: (_ for _ in ()).throw(TimeoutError("slow")))
+    monkeypatch.setattr(d.time, "sleep", lambda s: None)
+    with pytest.raises(TimeSeriesValidationError, match="Manual option"):
+        d.download_fred(attempts=2)

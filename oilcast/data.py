@@ -11,6 +11,7 @@ Source: https://fred.stlouisfed.org/series/POILBREUSDM (public domain / citation
 from __future__ import annotations
 
 import io
+import time
 import urllib.request
 from pathlib import Path
 from typing import Optional
@@ -63,16 +64,34 @@ def clean_monthly(df: pd.DataFrame, value_col: str = "brent_usd") -> pd.DataFram
     return df.reset_index(drop=True)
 
 
-def download_fred(series: str = "POILBREUSDM", timeout: int = 30) -> str:
-    req = urllib.request.Request(FRED_URL.format(series=series), headers={"User-Agent": "oilcast/1.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read().decode("utf-8")
+MANUAL = DATA_DIR / "manual" / "POILBREUSDM.csv"
+BROWSER_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+              "(KHTML, like Gecko) Version/17.0 Safari/605.1.15")
+
+
+def download_fred(series: str = "POILBREUSDM", timeout: int = 90, attempts: int = 3) -> str:
+    """Download with retries and back-off (FRED can be slow to respond to scripts)."""
+    last = None
+    for i in range(attempts):
+        try:
+            req = urllib.request.Request(FRED_URL.format(series=series), headers={"User-Agent": BROWSER_UA})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read().decode("utf-8")
+        except Exception as e:  # timeout, DNS, HTTP errors
+            last = e
+            time.sleep(3 * (i + 1))
+    raise TimeSeriesValidationError(
+        f"Could not download {series} from FRED after {attempts} attempts ({type(last).__name__}: {last}). "
+        f"Manual option: open {FRED_URL.format(series=series)} in a browser and save the file as {MANUAL}")
 
 
 def load_brent(refresh: bool = False, start: Optional[str] = None, cache: Path = CACHE) -> pd.DataFrame:
     """Monthly Brent prices (date, brent_usd). Uses the cached CSV unless refresh=True or missing."""
     if refresh or not cache.exists():
-        df = parse_fred_csv(download_fred())
+        if MANUAL.exists() and not refresh:
+            df = parse_fred_csv(MANUAL.read_text(encoding="utf-8-sig"))      # browser-downloaded copy
+        else:
+            df = parse_fred_csv(download_fred())
         cache.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(cache, index=False, date_format="%Y-%m-%d")
     df = clean_monthly(pd.read_csv(cache, parse_dates=["date"]))
