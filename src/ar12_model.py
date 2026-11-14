@@ -72,7 +72,7 @@ class OilPriceAR12Forecaster:
         test = series.iloc[-test_size:]
 
         # Fit on training split for out-of-sample evaluation
-        eval_model = AutoReg(train, lags=self.lags, old_names=False).fit()
+        eval_model = AutoReg(train, lags=self.lags).fit()
         test_pred = eval_model.predict(start=len(train), end=len(series) - 1, dynamic=False)
 
         rmse = float(np.sqrt(np.mean((test.values - test_pred.values) ** 2)))
@@ -80,7 +80,7 @@ class OilPriceAR12Forecaster:
         mape = float(np.mean(np.abs((test.values - test_pred.values) / test.values)) * 100.0)
 
         # Refit on full series for future horizon forecast + 95% CI
-        full_model = AutoReg(series, lags=self.lags, old_names=False).fit()
+        full_model = AutoReg(series, lags=self.lags).fit()
         self.fitted_model = full_model
         self.train_series = series
 
